@@ -11,7 +11,10 @@ import uuid
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 from llm_sandbox.const import SandboxBackend, SupportedLanguage
 from llm_sandbox.core.session_base import BaseSession
@@ -223,13 +226,22 @@ class InteractiveSandboxSession(BaseSession):
     # ------------------------------------------------------------------ #
     # Execution
     # ------------------------------------------------------------------ #
-    def run(self, code: str, libraries: list[str] | None = None, timeout: float | None = None) -> ConsoleOutput:
+    def run(
+        self,
+        code: str,
+        libraries: list[str] | None = None,
+        timeout: float | None = None,
+        on_stdout: Callable[[str], None] | None = None,  # noqa: ARG002
+        on_stderr: Callable[[str], None] | None = None,  # noqa: ARG002
+    ) -> ConsoleOutput:
         """Execute code in the persistent interpreter context.
 
         Args:
             code: The Python code to execute
             libraries: Optional list of libraries to install before execution
             timeout: Maximum execution time in seconds
+            on_stdout: Not used in interactive sessions (accepted for API compatibility)
+            on_stderr: Not used in interactive sessions (accepted for API compatibility)
 
         Returns:
             ConsoleOutput containing stdout, stderr, and exit code
@@ -404,33 +416,51 @@ class InteractiveSandboxSession(BaseSession):
     # ------------------------------------------------------------------ #
     # Delegation methods to backend session
     # ------------------------------------------------------------------ #
-    def execute_command(self, command: str, workdir: str | None = None) -> ConsoleOutput:
+    def execute_command(
+        self,
+        command: str,
+        workdir: str | None = None,
+        on_stdout: Callable[[str], None] | None = None,
+        on_stderr: Callable[[str], None] | None = None,
+    ) -> ConsoleOutput:
         """Execute a command in the backend container.
 
         Args:
             command: The command to execute
             workdir: Optional working directory
+            on_stdout: Optional callback for stdout chunks
+            on_stderr: Optional callback for stderr chunks
 
         Returns:
             ConsoleOutput: The command output
 
         """
-        return self._backend_session.execute_command(command, workdir=workdir)
+        return self._backend_session.execute_command(
+            command, workdir=workdir, on_stdout=on_stdout, on_stderr=on_stderr
+        )
 
     def execute_commands(
-        self, commands: list[str | tuple[str, str | None]], workdir: str | None = None
+        self,
+        commands: list[str | tuple[str, str | None]],
+        workdir: str | None = None,
+        on_stdout: Callable[[str], None] | None = None,
+        on_stderr: Callable[[str], None] | None = None,
     ) -> ConsoleOutput:
         """Execute multiple commands in the backend container.
 
         Args:
             commands: List of commands to execute
             workdir: Optional working directory
+            on_stdout: Optional callback for stdout chunks
+            on_stderr: Optional callback for stderr chunks
 
         Returns:
             ConsoleOutput: The output of the last command
 
         """
-        return self._backend_session.execute_commands(commands, workdir=workdir)
+        return self._backend_session.execute_commands(
+            commands, workdir=workdir, on_stdout=on_stdout, on_stderr=on_stderr
+        )
 
     def copy_to_runtime(self, src: str, dest: str) -> None:
         """Copy a file to the backend container.
@@ -501,18 +531,27 @@ class InteractiveSandboxSession(BaseSession):
             return self._backend_session._process_non_stream_output(output)  # noqa: SLF001
         return "", ""
 
-    def _process_stream_output(self, output: Any) -> tuple[str, str]:
+    def _process_stream_output(
+        self,
+        output: Any,
+        on_stdout: Callable[[str], None] | None = None,
+        on_stderr: Callable[[str], None] | None = None,
+    ) -> tuple[str, str]:
         """Process streaming output.
 
         Args:
             output: The output to process
+            on_stdout: Optional callback for stdout chunks
+            on_stderr: Optional callback for stderr chunks
 
         Returns:
             Tuple of (stdout, stderr)
 
         """
         if self._backend_session:
-            return self._backend_session._process_stream_output(output)  # noqa: SLF001
+            return self._backend_session._process_stream_output(  # noqa: SLF001
+                output, on_stdout=on_stdout, on_stderr=on_stderr
+            )
         return "", ""
 
 

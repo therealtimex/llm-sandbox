@@ -4,6 +4,7 @@ import shlex
 import tarfile
 import time
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -565,7 +566,7 @@ class SandboxKubernetesSession(BaseSession):
         )
         if mkdir_result[0] != 0:
             stdout_output, stderr_output = mkdir_result[1]
-            error_msg = stderr_output if stderr_output else stdout_output
+            error_msg = stderr_output or stdout_output
             self._log(f"Failed to create directory {path}: {error_msg}", "error")
 
     def _ensure_ownership(self, paths: list[str]) -> None:
@@ -586,8 +587,13 @@ class SandboxKubernetesSession(BaseSession):
             return str(stdout_data), str(stderr_data)
         return "", ""
 
-    def _process_stream_output(self, output: Any) -> tuple[str, str]:
-        """Process streaming Kubernetes output (not used but required by mixin)."""
+    def _process_stream_output(
+        self,
+        output: Any,
+        on_stdout: Callable[[str], None] | None = None,  # noqa: ARG002
+        on_stderr: Callable[[str], None] | None = None,  # noqa: ARG002
+    ) -> tuple[str, str]:
+        """Process streaming Kubernetes output (delegates to non-stream processing)."""
         return self._process_non_stream_output(output)
 
     def _handle_timeout(self) -> None:

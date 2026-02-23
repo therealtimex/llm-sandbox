@@ -1,4 +1,3 @@
-# ruff: noqa: SLF001, PLR2004, ARG002
 
 """Tests for real-time output streaming callbacks (issue #149).
 
@@ -16,10 +15,7 @@ Tests cover:
 """
 
 from collections.abc import Generator
-from typing import Any
 from unittest.mock import MagicMock, Mock, patch
-
-import pytest
 
 from llm_sandbox.data import ConsoleOutput, StreamCallback
 from llm_sandbox.docker import SandboxDockerSession
@@ -39,14 +35,14 @@ class TestStreamCallbackType:
 
     def test_stream_callback_with_lambda(self) -> None:
         """Test that StreamCallback works with lambdas."""
-        callback: StreamCallback = lambda chunk: None  # noqa: E731
+        callback: StreamCallback = lambda _: None  # noqa: E731
         assert callable(callback)
 
     def test_stream_callback_exported_from_package(self) -> None:
         """Test that StreamCallback is exported from the top-level package."""
-        from llm_sandbox import StreamCallback as SC
+        from llm_sandbox import StreamCallback as StreamCallbackReexport  # noqa: PLC0415
 
-        assert SC is StreamCallback
+        assert StreamCallbackReexport is StreamCallback
 
 
 class TestDockerStreamOutputCallbacks:
@@ -193,7 +189,7 @@ class TestDockerStreamOutputCallbacks:
         session = SandboxDockerSession()
         call_count = 0
 
-        def failing_callback(chunk: str) -> None:
+        def failing_callback(_chunk: str) -> None:
             nonlocal call_count
             call_count += 1
             msg = "callback error"
@@ -204,7 +200,7 @@ class TestDockerStreamOutputCallbacks:
 
         # The exception from callback propagates through the stream loop
         with patch.object(session, "_log"):
-            stdout, stderr = session._process_stream_output(
+            _stdout, _stderr = session._process_stream_output(
                 mock_output_gen(),
                 on_stdout=failing_callback,
             )
