@@ -1952,7 +1952,13 @@ class TestSandboxKubernetesSessionContainerName:
             mock_execute.return_value = (0, ("output", ""))
             session.execute_command("echo test")
             mock_execute.assert_called_with(
-                "test-pod", "echo test", workdir=None, stream=False, container_name="my-app-container"
+                "test-pod",
+                "echo test",
+                workdir=None,
+                stream=False,
+                container_name="my-app-container",
+                on_stdout=None,
+                on_stderr=None,
             )
 
             # Test copy_to_runtime passes container name

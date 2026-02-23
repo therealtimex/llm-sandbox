@@ -415,7 +415,9 @@ def test_execute_command_delegation() -> None:
 
     result = session.execute_command("echo test")
     assert result == mock_output
-    session._backend_session.execute_command.assert_called_once_with("echo test", workdir=None)
+    session._backend_session.execute_command.assert_called_once_with(
+        "echo test", workdir=None, on_stdout=None, on_stderr=None
+    )
 
 
 @patch("llm_sandbox.interactive._create_backend_session", new=_stub_backend_session)
@@ -428,7 +430,9 @@ def test_execute_commands_delegation() -> None:
     commands: list[str | tuple[str, str | None]] = ["echo test1", "echo test2"]
     result = session.execute_commands(commands)
     assert result == mock_output
-    session._backend_session.execute_commands.assert_called_once_with(commands, workdir=None)
+    session._backend_session.execute_commands.assert_called_once_with(
+        commands, workdir=None, on_stdout=None, on_stderr=None
+    )
 
 
 @patch("llm_sandbox.interactive._create_backend_session", new=_stub_backend_session)
