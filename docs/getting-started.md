@@ -419,6 +419,50 @@ df.to_csv('/sandbox/processed.csv', index=False)
     session.copy_from_runtime("/sandbox/processed.csv", "processed_data.csv")
 ```
 
+### Real-Time Output Streaming
+
+By default, `run()` returns output only after execution completes. For long-running code, you can receive output in real time using the `on_stdout` and `on_stderr` callbacks:
+
+```python
+from llm_sandbox import SandboxSession
+
+# Print each output chunk as it arrives
+with SandboxSession(lang="python") as session:
+    result = session.run("""
+import time
+for i in range(5):
+    print(f"Processing step {i + 1}/5...")
+    time.sleep(1)
+print("Done!")
+    """,
+        on_stdout=lambda chunk: print(f"[live] {chunk}", end=""),
+    )
+
+# result.stdout still contains the full accumulated output
+print(f"Final output: {result.stdout}")
+```
+
+You can also handle stdout and stderr separately:
+
+```python
+with SandboxSession(lang="python") as session:
+    result = session.run("""
+import sys
+print("Normal output")
+print("Warning: check this", file=sys.stderr)
+print("More output")
+    """,
+        on_stdout=lambda chunk: print(f"  [OUT] {chunk}", end=""),
+        on_stderr=lambda chunk: print(f"  [ERR] {chunk}", end=""),
+    )
+```
+
+!!! tip "No `stream=True` needed"
+    You do **not** need to pass `stream=True` when creating the session. Providing `on_stdout` or `on_stderr` callbacks automatically enables streaming mode for that execution.
+
+!!! note "Buffering"
+    For Python code, `PYTHONUNBUFFERED=1` is automatically set in the container environment so output flushes after every write. For other languages, buffering behavior depends on the runtime.
+
 ### Setting Resource Limits
 
 Control resource usage with runtime configurations:

@@ -1,12 +1,10 @@
-# ruff: noqa: SLF001, PLR2004
-
 """Tests for llm_sandbox.language_handlers.base module - missing coverage."""
 
 import base64
 import io
 import logging
 import tarfile
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
@@ -103,6 +101,70 @@ class TestMissingCoverage:
         container.run.assert_called_once_with(code, ["numpy"], 30)
         assert result == "result"
         assert plots == []
+
+    def test_run_with_artifacts_passes_kwargs(self) -> None:
+        """Test run_with_artifacts forwards **kwargs to container.run()."""
+        config = LanguageConfig(
+            name="test",
+            file_extension=".test",
+            execution_commands=["test {file}"],
+            package_manager="test-manager",
+            plot_detection=None,
+        )
+        handler = ConcreteLanguageHandler(config)
+
+        container = Mock()
+        container.run.return_value = "result"
+
+        on_stdout = Mock()
+        on_stderr = Mock()
+        result, plots = handler.run_with_artifacts(
+            container,
+            "print('hi')",
+            libraries=None,
+            enable_plotting=False,
+            timeout=30,
+            output_dir="/tmp/sandbox_plots",
+            on_stdout=on_stdout,
+            on_stderr=on_stderr,
+        )
+
+        container.run.assert_called_once_with("print('hi')", None, 30, on_stdout=on_stdout, on_stderr=on_stderr)
+        assert result == "result"
+        assert plots == []
+
+    def test_run_with_artifacts_passes_kwargs_with_plotting(self) -> None:
+        """Test run_with_artifacts forwards **kwargs even when plotting is enabled."""
+        config = LanguageConfig(
+            name="test",
+            file_extension=".test",
+            execution_commands=["test {file}"],
+            package_manager="test-manager",
+            plot_detection=PlotDetectionConfig(
+                libraries=[PlotLibrary.MATPLOTLIB],
+                setup_code="# setup",
+                cleanup_code="",
+            ),
+        )
+        handler = ConcreteLanguageHandler(config)
+
+        container = Mock()
+        container.run.return_value = "result"
+        handler.extract_plots = MagicMock(return_value=[])
+
+        on_stdout = Mock()
+        result, plots = handler.run_with_artifacts(
+            container,
+            "import matplotlib",
+            libraries=None,
+            enable_plotting=True,
+            timeout=30,
+            output_dir="/tmp/sandbox_plots",
+            on_stdout=on_stdout,
+        )
+
+        call_kwargs = container.run.call_args[1]
+        assert call_kwargs["on_stdout"] is on_stdout
 
     def test_plot_library_enum_coverage(self) -> None:
         """Test PlotLibrary enum (lines 12-25)."""

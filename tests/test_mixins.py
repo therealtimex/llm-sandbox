@@ -358,7 +358,7 @@ class TestCommandExecutionMixin:
             def _process_non_stream_output(self, output: str) -> tuple[str, str]:
                 return "stdout", "stderr"
 
-            def _process_stream_output(self, output: str) -> tuple[str, str]:
+            def _process_stream_output(self, output: str, **kwargs: object) -> tuple[str, str]:
                 return "stream_stdout", "stream_stderr"
 
         self.mixin = ConcreteCommandExecutionMixin()

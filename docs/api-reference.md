@@ -33,7 +33,7 @@ The `ArtifactSandboxSession` class provides built-in support for capturing and m
 
 **Methods**:
 
-- `run(code, libraries=None, timeout=None, clear_plots=False)`: Execute code and capture artifacts
+- `run(code, libraries=None, timeout=None, clear_plots=False, on_stdout=None, on_stderr=None)`: Execute code and capture artifacts
 - `clear_plots()`: Manually clear all plots and reset the plot counter
 
 **Example - Plot Accumulation**:
@@ -297,19 +297,44 @@ Common exceptions include:
 
 ## Type Hints
 
+### StreamCallback
+
+```python
+StreamCallback = Callable[[str], None] | None
+```
+
+A type alias for real-time output streaming callbacks. When provided to `run()`, `execute_command()`, or `execute_commands()`, the callback is invoked with each decoded output chunk as it arrives, enabling real-time output processing.
+
+!!! warning "Security consideration"
+    Callbacks receive **all raw output** from the container, which may include secrets, credentials, or PII if the executed code emits them. Avoid logging or forwarding callback data to untrusted destinations without sanitization.
+
 ### Protocol Types
 
 ```python
 class ContainerProtocol(Protocol):
     """Protocol for container objects"""
 
-    def execute_command(self, command: str, workdir: str | None = None) -> Any:
+    def execute_command(
+        self,
+        command: str,
+        workdir: str | None = None,
+        on_stdout: StreamCallback = None,
+        on_stderr: StreamCallback = None,
+    ) -> Any:
         ...
 
     def get_archive(self, path: str) -> tuple:
         ...
 
-    def run(self, code: str, libraries: list | None = None) -> Any:
+    def run(
+        self,
+        code: str,
+        libraries: list | None = None,
+        timeout: int = 30,
+        on_stdout: StreamCallback = None,
+        on_stderr: StreamCallback = None,
+        **kwargs: Any,
+    ) -> Any:
         ...
 ```
 
@@ -403,6 +428,15 @@ plt.show()
     for i, plot in enumerate(result.plots):
         with open(f"plot_{i}.{plot.format.value}", "wb") as f:
             f.write(base64.b64decode(plot.content_base64))
+
+# With real-time output streaming
+with SandboxSession(lang="python") as session:
+    result = session.run(
+        "import time\nfor i in range(3):\n    print(f'Step {i}')\n    time.sleep(1)",
+        on_stdout=lambda chunk: print(f"[live] {chunk}", end=""),
+    )
+    # Callbacks fire per-chunk during execution.
+    # result.stdout still contains the full accumulated output.
 
 # Kubernetes backend
 with SandboxSession(

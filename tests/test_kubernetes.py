@@ -1,5 +1,3 @@
-# ruff: noqa: SLF001, PLR2004, ARG002, PT011, PT012
-
 """Tests for Kubernetes backend implementation."""
 
 import io
@@ -129,7 +127,10 @@ class TestSandboxKubernetesSessionInit:
         assert manifest["kind"] == "Pod"
         assert manifest["metadata"]["namespace"] == "default"
         assert manifest["spec"]["containers"][0]["image"] == DefaultImage.PYTHON
-        assert manifest["spec"]["containers"][0]["env"] == [{"name": "TEST_VAR", "value": "test_value"}]
+        env_list = manifest["spec"]["containers"][0]["env"]
+        env_names = {e["name"] for e in env_list}
+        assert {"PYTHONUNBUFFERED", "TEST_VAR"} <= env_names
+        assert {"name": "TEST_VAR", "value": "test_value"} in env_list
 
 
 class TestSandboxKubernetesSessionOpen:
@@ -753,8 +754,9 @@ class TestSandboxKubernetesSessionContextManager:
             patch.object(session, "open") as mock_open,
             patch.object(session, "close") as mock_close,
         ):
-            with pytest.raises(ValueError), session:
-                raise ValueError
+            msg = "test error"
+            with pytest.raises(ValueError, match=msg), session:
+                raise ValueError(msg)
 
             mock_open.assert_called_once()
             mock_close.assert_called_once()
@@ -1156,8 +1158,8 @@ class TestSandboxKubernetesSessionEdgeCases:
         manifest = session.pod_manifest
         containers = manifest["spec"]["containers"]
 
-        # Should not have env section when no env_vars provided
-        assert "env" not in containers[0]
+        # Should only have the default PYTHONUNBUFFERED env var when no env_vars provided
+        assert containers[0]["env"] == [{"name": "PYTHONUNBUFFERED", "value": "1"}]
 
     @patch("kubernetes.config.load_kube_config")
     @patch("llm_sandbox.kubernetes.CoreV1Api")
@@ -1497,12 +1499,10 @@ class TestSandboxKubernetesSessionInheritance:
         session = SandboxKubernetesSession()
         session.container = "test-pod"
 
-        with (
-            patch.object(session.container_api, "copy_from_container") as mock_copy_from,
-            pytest.raises(FileNotFoundError, match="not found in container"),
-        ):
+        with patch.object(session.container_api, "copy_from_container") as mock_copy_from:
             mock_copy_from.return_value = (b"", {"size": 0})
-            session.copy_from_runtime("/pod/missing.txt", "/host/dest.txt")
+            with pytest.raises(FileNotFoundError, match="not found in container"):
+                session.copy_from_runtime("/pod/missing.txt", "/host/dest.txt")
 
     @patch("kubernetes.config.load_kube_config")
     @patch("llm_sandbox.kubernetes.CoreV1Api")
@@ -1678,9 +1678,11 @@ class TestSandboxKubernetesSessionComplexScenarios:
         # Verify custom image is used
         assert container["image"] == "custom:latest"
 
-        # Verify all environment variables are present
+        # Verify all environment variables are present (plus PYTHONUNBUFFERED)
         env_vars = {env["name"]: env["value"] for env in container["env"]}
-        assert env_vars == complex_env_vars
+        for key, value in complex_env_vars.items():
+            assert env_vars[key] == value
+        assert env_vars["PYTHONUNBUFFERED"] == "1"
 
     @patch("kubernetes.config.load_kube_config")
     @patch("llm_sandbox.kubernetes.CoreV1Api")
@@ -1952,7 +1954,13 @@ class TestSandboxKubernetesSessionContainerName:
             mock_execute.return_value = (0, ("output", ""))
             session.execute_command("echo test")
             mock_execute.assert_called_with(
-                "test-pod", "echo test", workdir=None, stream=False, container_name="my-app-container"
+                "test-pod",
+                "echo test",
+                workdir=None,
+                stream=False,
+                container_name="my-app-container",
+                on_stdout=None,
+                on_stderr=None,
             )
 
             # Test copy_to_runtime passes container name
@@ -2315,3 +2323,201 @@ class TestSandboxKubernetesSessionExistingPod:
         session.close()
 
         session.container_api.stop_container.assert_called_once()
+
+
+class TestKubernetesStreamingCallbacks:
+    """Test on_stdout/on_stderr callback support in Kubernetes execute_command."""
+
+    @patch("kubernetes.config.load_kube_config")
+    @patch("llm_sandbox.kubernetes.CoreV1Api")
+    @patch("llm_sandbox.language_handlers.factory.LanguageHandlerFactory.create_handler")
+    def test_execute_command_with_stdout_callback(
+        self, mock_create_handler: MagicMock, mock_core_v1_api: MagicMock, mock_load_config: MagicMock
+    ) -> None:
+        """Test that on_stdout callback is invoked during K8s command execution."""
+        mock_handler = MagicMock()
+        mock_create_handler.return_value = mock_handler
+
+        session = SandboxKubernetesSession()
+        session.container = "test-pod"
+
+        stdout_chunks: list[str] = []
+
+        with patch.object(session.container_api, "execute_command") as mock_exec:
+            mock_exec.return_value = (0, ("output", ""))
+            session.execute_command("echo test", on_stdout=stdout_chunks.append)
+
+            call_kwargs = mock_exec.call_args[1]
+            assert call_kwargs["on_stdout"] is not None
+
+    @patch("kubernetes.config.load_kube_config")
+    @patch("llm_sandbox.kubernetes.CoreV1Api")
+    @patch("llm_sandbox.language_handlers.factory.LanguageHandlerFactory.create_handler")
+    def test_execute_command_with_stderr_callback(
+        self, mock_create_handler: MagicMock, mock_core_v1_api: MagicMock, mock_load_config: MagicMock
+    ) -> None:
+        """Test that on_stderr callback is invoked during K8s command execution."""
+        mock_handler = MagicMock()
+        mock_create_handler.return_value = mock_handler
+
+        session = SandboxKubernetesSession()
+        session.container = "test-pod"
+
+        stderr_chunks: list[str] = []
+
+        with patch.object(session.container_api, "execute_command") as mock_exec:
+            mock_exec.return_value = (0, ("", "error"))
+            session.execute_command("bad cmd", on_stderr=stderr_chunks.append)
+
+            call_kwargs = mock_exec.call_args[1]
+            assert call_kwargs["on_stderr"] is not None
+
+    @patch("kubernetes.config.load_kube_config")
+    @patch("llm_sandbox.kubernetes.CoreV1Api")
+    @patch("llm_sandbox.language_handlers.factory.LanguageHandlerFactory.create_handler")
+    def test_container_api_stdout_callback_invoked(
+        self, mock_create_handler: MagicMock, mock_core_v1_api: MagicMock, mock_load_config: MagicMock
+    ) -> None:
+        """Test KubernetesContainerAPI forwards stdout chunks to callback."""
+        mock_handler = MagicMock()
+        mock_create_handler.return_value = mock_handler
+
+        session = SandboxKubernetesSession()
+        stdout_chunks: list[str] = []
+
+        mock_resp = MagicMock()
+        mock_resp.is_open.side_effect = [True, False]
+        mock_resp.peek_stdout.return_value = True
+        mock_resp.read_stdout.return_value = "chunk1"
+        mock_resp.peek_stderr.return_value = False
+        mock_resp.returncode = 0
+
+        with patch("llm_sandbox.kubernetes.stream", return_value=mock_resp):
+            exit_code, (stdout, stderr) = session.container_api.execute_command(
+                "test-pod", "echo hi", on_stdout=stdout_chunks.append, container_name="sandbox-container"
+            )
+
+        assert stdout_chunks == ["chunk1"]
+        assert "chunk1" in stdout
+
+    @patch("kubernetes.config.load_kube_config")
+    @patch("llm_sandbox.kubernetes.CoreV1Api")
+    @patch("llm_sandbox.language_handlers.factory.LanguageHandlerFactory.create_handler")
+    def test_container_api_stderr_callback_invoked(
+        self, mock_create_handler: MagicMock, mock_core_v1_api: MagicMock, mock_load_config: MagicMock
+    ) -> None:
+        """Test KubernetesContainerAPI forwards stderr chunks to callback."""
+        mock_handler = MagicMock()
+        mock_create_handler.return_value = mock_handler
+
+        session = SandboxKubernetesSession()
+        stderr_chunks: list[str] = []
+
+        mock_resp = MagicMock()
+        mock_resp.is_open.side_effect = [True, False]
+        mock_resp.peek_stdout.return_value = False
+        mock_resp.peek_stderr.return_value = True
+        mock_resp.read_stderr.return_value = "err1"
+        mock_resp.returncode = 0
+
+        with patch("llm_sandbox.kubernetes.stream", return_value=mock_resp):
+            exit_code, (stdout, stderr) = session.container_api.execute_command(
+                "test-pod", "bad cmd", on_stderr=stderr_chunks.append, container_name="sandbox-container"
+            )
+
+        assert stderr_chunks == ["err1"]
+        assert "err1" in stderr
+
+    @patch("kubernetes.config.load_kube_config")
+    @patch("llm_sandbox.kubernetes.CoreV1Api")
+    @patch("llm_sandbox.language_handlers.factory.LanguageHandlerFactory.create_handler")
+    def test_container_api_callback_exception_handled(
+        self, mock_create_handler: MagicMock, mock_core_v1_api: MagicMock, mock_load_config: MagicMock
+    ) -> None:
+        """Test that exceptions in callbacks are caught and logged."""
+        mock_handler = MagicMock()
+        mock_create_handler.return_value = mock_handler
+
+        session = SandboxKubernetesSession()
+
+        def failing_callback(_chunk: str) -> None:
+            msg = "callback error"
+            raise RuntimeError(msg)
+
+        mock_resp = MagicMock()
+        mock_resp.is_open.side_effect = [True, False]
+        mock_resp.peek_stdout.return_value = True
+        mock_resp.read_stdout.return_value = "data"
+        mock_resp.peek_stderr.return_value = True
+        mock_resp.read_stderr.return_value = "err"
+        mock_resp.returncode = 0
+
+        with patch("llm_sandbox.kubernetes.stream", return_value=mock_resp):
+            exit_code, (stdout, stderr) = session.container_api.execute_command(
+                "test-pod",
+                "cmd",
+                on_stdout=failing_callback,
+                on_stderr=failing_callback,
+                container_name="sandbox-container",
+            )
+
+        assert "data" in stdout
+        assert "err" in stderr
+
+    @patch("kubernetes.config.load_kube_config")
+    @patch("llm_sandbox.kubernetes.CoreV1Api")
+    @patch("llm_sandbox.language_handlers.factory.LanguageHandlerFactory.create_handler")
+    def test_ensure_ownership_with_non_root_user(
+        self, mock_create_handler: MagicMock, mock_core_v1_api: MagicMock, mock_load_config: MagicMock
+    ) -> None:
+        """Test _ensure_ownership quotes paths for non-root user pods."""
+        mock_handler = MagicMock()
+        mock_create_handler.return_value = mock_handler
+
+        session = SandboxKubernetesSession()
+        session.container = "test-pod"
+
+        session.pod_manifest["spec"]["securityContext"]["runAsUser"] = 1000
+
+        with patch.object(session, "execute_command") as mock_exec:
+            mock_exec.return_value = ConsoleOutput(exit_code=0)
+            session._ensure_ownership(["/path/with space", "/normal/path"])
+
+            cmd = mock_exec.call_args[0][0]
+            assert "chown" in cmd
+            assert "'/path/with space'" in cmd
+
+    @patch("kubernetes.config.load_kube_config")
+    @patch("llm_sandbox.kubernetes.CoreV1Api")
+    @patch("llm_sandbox.language_handlers.factory.LanguageHandlerFactory.create_handler")
+    def test_process_stream_output_delegates_to_non_stream(
+        self, mock_create_handler: MagicMock, mock_core_v1_api: MagicMock, mock_load_config: MagicMock
+    ) -> None:
+        """Test _process_stream_output with callbacks still delegates to non-stream."""
+        mock_handler = MagicMock()
+        mock_create_handler.return_value = mock_handler
+
+        session = SandboxKubernetesSession()
+
+        output = ("stdout_data", "stderr_data")
+        stdout, stderr = session._process_stream_output(output, on_stdout=lambda _: None, on_stderr=lambda _: None)
+
+        assert stdout == "stdout_data"
+        assert stderr == "stderr_data"
+
+    @patch("kubernetes.config.load_kube_config")
+    @patch("llm_sandbox.kubernetes.CoreV1Api")
+    @patch("llm_sandbox.language_handlers.factory.LanguageHandlerFactory.create_handler")
+    def test_default_pod_manifest_pythonunbuffered_with_user_override(
+        self, mock_create_handler: MagicMock, mock_core_v1_api: MagicMock, mock_load_config: MagicMock
+    ) -> None:
+        """Test user-provided PYTHONUNBUFFERED overrides the default."""
+        mock_handler = MagicMock()
+        mock_create_handler.return_value = mock_handler
+
+        session = SandboxKubernetesSession(env_vars={"PYTHONUNBUFFERED": "0"})
+        manifest = session.pod_manifest
+        env_list = manifest["spec"]["containers"][0]["env"]
+        env_dict = {e["name"]: e["value"] for e in env_list}
+        assert env_dict["PYTHONUNBUFFERED"] == "0"
+        assert sum(1 for e in env_list if e["name"] == "PYTHONUNBUFFERED") == 1

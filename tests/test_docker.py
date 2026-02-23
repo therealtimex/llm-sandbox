@@ -1655,3 +1655,127 @@ class TestPathTraversalPrevention:
             # These should not raise
             session.copy_to_runtime(temp_file.name, "/sandbox/code.py")
             session.copy_to_runtime(temp_file.name, "/sandbox/subdir/code.py")
+
+
+class TestPythonUnbufferedEnvInjection:
+    """Test PYTHONUNBUFFERED=1 injection into container environment."""
+
+    @patch("llm_sandbox.docker.docker.from_env")
+    @patch("llm_sandbox.language_handlers.factory.LanguageHandlerFactory.create_handler")
+    def test_default_env_sets_pythonunbuffered(
+        self, mock_create_handler: MagicMock, mock_docker_from_env: MagicMock
+    ) -> None:
+        """Test PYTHONUNBUFFERED=1 is set when no user environment is provided."""
+        mock_handler = MagicMock()
+        mock_create_handler.return_value = mock_handler
+        mock_client = MagicMock()
+        mock_docker_from_env.return_value = mock_client
+
+        mock_image = MagicMock()
+        mock_image.tags = [DefaultImage.PYTHON]
+        mock_client.images.get.return_value = mock_image
+        mock_client.containers.create.return_value = MagicMock()
+
+        session = SandboxDockerSession()
+        with patch.object(session, "environment_setup"):
+            session.open()
+
+        create_kwargs = mock_client.containers.create.call_args[1]
+        assert create_kwargs["environment"] == {"PYTHONUNBUFFERED": "1"}
+
+    @patch("llm_sandbox.docker.docker.from_env")
+    @patch("llm_sandbox.language_handlers.factory.LanguageHandlerFactory.create_handler")
+    def test_env_dict_preserves_user_vars(
+        self, mock_create_handler: MagicMock, mock_docker_from_env: MagicMock
+    ) -> None:
+        """Test PYTHONUNBUFFERED merges with user-provided dict environment."""
+        mock_handler = MagicMock()
+        mock_create_handler.return_value = mock_handler
+        mock_client = MagicMock()
+        mock_docker_from_env.return_value = mock_client
+
+        mock_image = MagicMock()
+        mock_image.tags = [DefaultImage.PYTHON]
+        mock_client.images.get.return_value = mock_image
+        mock_client.containers.create.return_value = MagicMock()
+
+        session = SandboxDockerSession(runtime_configs={"environment": {"MY_VAR": "value"}})
+        with patch.object(session, "environment_setup"):
+            session.open()
+
+        create_kwargs = mock_client.containers.create.call_args[1]
+        env = create_kwargs["environment"]
+        assert env["MY_VAR"] == "value"
+        assert env["PYTHONUNBUFFERED"] == "1"
+
+    @patch("llm_sandbox.docker.docker.from_env")
+    @patch("llm_sandbox.language_handlers.factory.LanguageHandlerFactory.create_handler")
+    def test_env_dict_respects_user_override(
+        self, mock_create_handler: MagicMock, mock_docker_from_env: MagicMock
+    ) -> None:
+        """Test user-provided PYTHONUNBUFFERED is not overwritten."""
+        mock_handler = MagicMock()
+        mock_create_handler.return_value = mock_handler
+        mock_client = MagicMock()
+        mock_docker_from_env.return_value = mock_client
+
+        mock_image = MagicMock()
+        mock_image.tags = [DefaultImage.PYTHON]
+        mock_client.images.get.return_value = mock_image
+        mock_client.containers.create.return_value = MagicMock()
+
+        session = SandboxDockerSession(runtime_configs={"environment": {"PYTHONUNBUFFERED": "0"}})
+        with patch.object(session, "environment_setup"):
+            session.open()
+
+        create_kwargs = mock_client.containers.create.call_args[1]
+        assert create_kwargs["environment"]["PYTHONUNBUFFERED"] == "0"
+
+    @patch("llm_sandbox.docker.docker.from_env")
+    @patch("llm_sandbox.language_handlers.factory.LanguageHandlerFactory.create_handler")
+    def test_env_list_appends_pythonunbuffered(
+        self, mock_create_handler: MagicMock, mock_docker_from_env: MagicMock
+    ) -> None:
+        """Test PYTHONUNBUFFERED is appended to list-style environment."""
+        mock_handler = MagicMock()
+        mock_create_handler.return_value = mock_handler
+        mock_client = MagicMock()
+        mock_docker_from_env.return_value = mock_client
+
+        mock_image = MagicMock()
+        mock_image.tags = [DefaultImage.PYTHON]
+        mock_client.images.get.return_value = mock_image
+        mock_client.containers.create.return_value = MagicMock()
+
+        session = SandboxDockerSession(runtime_configs={"environment": ["MY_VAR=value"]})
+        with patch.object(session, "environment_setup"):
+            session.open()
+
+        create_kwargs = mock_client.containers.create.call_args[1]
+        env = create_kwargs["environment"]
+        assert "MY_VAR=value" in env
+        assert "PYTHONUNBUFFERED=1" in env
+
+    @patch("llm_sandbox.docker.docker.from_env")
+    @patch("llm_sandbox.language_handlers.factory.LanguageHandlerFactory.create_handler")
+    def test_env_list_skips_if_already_set(
+        self, mock_create_handler: MagicMock, mock_docker_from_env: MagicMock
+    ) -> None:
+        """Test PYTHONUNBUFFERED is not duplicated in list-style environment."""
+        mock_handler = MagicMock()
+        mock_create_handler.return_value = mock_handler
+        mock_client = MagicMock()
+        mock_docker_from_env.return_value = mock_client
+
+        mock_image = MagicMock()
+        mock_image.tags = [DefaultImage.PYTHON]
+        mock_client.images.get.return_value = mock_image
+        mock_client.containers.create.return_value = MagicMock()
+
+        session = SandboxDockerSession(runtime_configs={"environment": ["PYTHONUNBUFFERED=0"]})
+        with patch.object(session, "environment_setup"):
+            session.open()
+
+        create_kwargs = mock_client.containers.create.call_args[1]
+        env = create_kwargs["environment"]
+        assert env == ["PYTHONUNBUFFERED=0"]

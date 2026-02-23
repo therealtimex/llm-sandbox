@@ -4,6 +4,7 @@ import shlex
 import tarfile
 import time
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -15,7 +16,7 @@ from kubernetes.stream import stream
 from llm_sandbox.const import DefaultImage, EncodingErrorsType, SupportedLanguage
 from llm_sandbox.core.config import SessionConfig
 from llm_sandbox.core.session_base import BaseSession
-from llm_sandbox.data import ConsoleOutput
+from llm_sandbox.data import ConsoleOutput, StreamCallback
 from llm_sandbox.exceptions import CommandEmptyError, ContainerError, NotOpenSessionError
 from llm_sandbox.k8s_utils import retry_k8s_api_call
 from llm_sandbox.security import SecurityPolicy
@@ -86,9 +87,16 @@ class KubernetesContainerAPI:
             self.logger.debug("Failed to delete pod %s: %s", container, e)
 
     def execute_command(self, container: Any, command: str, **kwargs: Any) -> tuple[int, Any]:
-        """Execute command in Kubernetes pod."""
+        """Execute command in Kubernetes pod.
+
+        Supports optional ``on_stdout`` / ``on_stderr`` keyword arguments.
+        When provided, each decoded chunk is forwarded to the respective
+        callback in real time while still accumulating the full output.
+        """
         workdir = kwargs.get("workdir")
         container_name = kwargs.get("container_name")  # Get the specific container name
+        on_stdout: StreamCallback | None = kwargs.get("on_stdout")
+        on_stderr: StreamCallback | None = kwargs.get("on_stderr")
 
         exec_command = [SH_SHELL, "-c", f"cd {workdir} && {command}"] if workdir else [SH_SHELL, "-c", command]
 
@@ -114,10 +122,20 @@ class KubernetesContainerAPI:
             if resp.peek_stdout():
                 chunk = resp.read_stdout()
                 stdout_output += chunk
+                if on_stdout:
+                    try:
+                        on_stdout(chunk)
+                    except Exception:  # noqa: BLE001
+                        self.logger.warning("on_stdout callback raised an exception")
 
             if resp.peek_stderr():
                 chunk = resp.read_stderr()
                 stderr_output += chunk
+                if on_stderr:
+                    try:
+                        on_stderr(chunk)
+                    except Exception:  # noqa: BLE001
+                        self.logger.warning("on_stderr callback raised an exception")
 
         # Ensure we wait for the command to complete properly
         resp.close()
@@ -439,9 +457,14 @@ class SandboxKubernetesSession(BaseSession):
             },
         }
 
+        containers = pod_manifest["spec"]["containers"]  # type: ignore[index]
+        env_list: list[dict[str, str]] = []
         if self.env_vars:
-            containers = pod_manifest["spec"]["containers"]  # type: ignore[index]
-            containers[0]["env"] = [{"name": key, "value": value} for key, value in self.env_vars.items()]
+            env_list.extend({"name": key, "value": value} for key, value in self.env_vars.items())
+        # Inject PYTHONUNBUFFERED=1 only if the user hasn't already set it
+        if not any(e["name"] == "PYTHONUNBUFFERED" for e in env_list):
+            env_list.insert(0, {"name": "PYTHONUNBUFFERED", "value": "1"})
+        containers[0]["env"] = env_list
         return pod_manifest
 
     def _reconfigure_with_pod_manifest(self) -> None:
@@ -554,7 +577,7 @@ class SandboxKubernetesSession(BaseSession):
         )
         if mkdir_result[0] != 0:
             stdout_output, stderr_output = mkdir_result[1]
-            error_msg = stderr_output if stderr_output else stdout_output
+            error_msg = stderr_output or stdout_output
             self._log(f"Failed to create directory {path}: {error_msg}", "error")
 
     def _ensure_ownership(self, paths: list[str]) -> None:
@@ -575,8 +598,13 @@ class SandboxKubernetesSession(BaseSession):
             return str(stdout_data), str(stderr_data)
         return "", ""
 
-    def _process_stream_output(self, output: Any) -> tuple[str, str]:
-        """Process streaming Kubernetes output (not used but required by mixin)."""
+    def _process_stream_output(
+        self,
+        output: Any,
+        on_stdout: Callable[[str], None] | None = None,  # noqa: ARG002
+        on_stderr: Callable[[str], None] | None = None,  # noqa: ARG002
+    ) -> tuple[str, str]:
+        """Process streaming Kubernetes output (delegates to non-stream processing)."""
         return self._process_non_stream_output(output)
 
     def _handle_timeout(self) -> None:
@@ -627,8 +655,14 @@ class SandboxKubernetesSession(BaseSession):
 
         return self.container_api.copy_from_container(self.container, path, container_name=self.container_name)
 
-    def execute_command(self, command: str, workdir: str | None = None) -> ConsoleOutput:
-        """Override to pass container name for Kubernetes."""
+    def execute_command(
+        self,
+        command: str,
+        workdir: str | None = None,
+        on_stdout: StreamCallback | None = None,
+        on_stderr: StreamCallback | None = None,
+    ) -> ConsoleOutput:
+        """Override to pass container name and streaming callbacks for Kubernetes."""
         if not command:
             raise CommandEmptyError
 
@@ -639,7 +673,13 @@ class SandboxKubernetesSession(BaseSession):
             self.logger.info("Executing command: %s", command)
 
         exit_code, output = self.container_api.execute_command(
-            self.container, command, workdir=workdir, stream=self.stream, container_name=self.container_name
+            self.container,
+            command,
+            workdir=workdir,
+            stream=self.stream,
+            container_name=self.container_name,
+            on_stdout=on_stdout,
+            on_stderr=on_stderr,
         )
 
         stdout, stderr = self._process_output(output)

@@ -8,7 +8,7 @@ from llm_sandbox.security import SecurityPolicy
 
 from .const import SandboxBackend, SupportedLanguage
 from .core.session_base import BaseSession
-from .data import ExecutionResult
+from .data import ExecutionResult, StreamCallback
 from .exceptions import LanguageNotSupportPlotError, MissingDependencyError, UnsupportedBackendError
 from .interactive import InteractiveSandboxSession
 from .pool.base import ContainerPoolManager
@@ -528,6 +528,8 @@ class ArtifactSandboxSession:
         libraries: list | None = None,
         timeout: float | None = None,
         clear_plots: bool = False,
+        on_stdout: StreamCallback | None = None,
+        on_stderr: StreamCallback | None = None,
     ) -> ExecutionResult:
         """Run code in the sandbox session and extract any generated artifacts.
 
@@ -546,6 +548,10 @@ class ArtifactSandboxSession:
                                                 (typically 60) or 60 if not configured.
             clear_plots (bool, optional): Whether to clear existing plots before running
                                             the code. Defaults to False.
+            on_stdout (StreamCallback | None): Optional callback invoked with each decoded stdout
+                chunk as it arrives during execution. Note: callbacks execute in a worker thread.
+            on_stderr (StreamCallback | None): Optional callback invoked with each decoded stderr
+                chunk as it arrives during execution. Note: callbacks execute in a worker thread.
 
         Returns:
             ExecutionResult: An object containing:
@@ -667,6 +673,8 @@ class ArtifactSandboxSession:
                 libraries=libraries,
                 timeout=timeout,
                 clear_plots=clear_plots,
+                on_stdout=on_stdout,
+                on_stderr=on_stderr,
             )
 
         # Non-pooled implementation
@@ -693,6 +701,8 @@ class ArtifactSandboxSession:
             enable_plotting=self.enable_plotting,
             output_dir="/tmp/sandbox_plots",
             timeout=int(effective_timeout),
+            on_stdout=on_stdout,
+            on_stderr=on_stderr,
         )
 
         return ExecutionResult(

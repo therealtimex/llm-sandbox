@@ -228,6 +228,8 @@ class TestArtifactSandboxSession:
             enable_plotting=False,
             output_dir="/tmp/sandbox_plots",
             timeout=60,
+            on_stdout=None,
+            on_stderr=None,
         )
 
     @patch("llm_sandbox.session.create_session")
@@ -265,6 +267,8 @@ class TestArtifactSandboxSession:
             enable_plotting=True,
             output_dir="/tmp/sandbox_plots",
             timeout=60,
+            on_stdout=None,
+            on_stderr=None,
         )
 
     @patch("llm_sandbox.session.create_session")
@@ -309,6 +313,8 @@ class TestArtifactSandboxSession:
             enable_plotting=False,
             output_dir="/tmp/sandbox_plots",
             timeout=120,
+            on_stdout=None,
+            on_stderr=None,
         )
 
 

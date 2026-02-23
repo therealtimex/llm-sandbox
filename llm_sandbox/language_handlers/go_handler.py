@@ -34,6 +34,7 @@ class GoHandler(AbstractLanguageHandler):
         enable_plotting: bool = True,  # noqa: ARG002
         output_dir: str = "/tmp/sandbox_plots",  # noqa: ARG002
         timeout: int = 30,
+        **kwargs: Any,
     ) -> tuple[Any, list[PlotOutput]]:
         """Run Go code without artifact extraction.
 
@@ -52,13 +53,14 @@ class GoHandler(AbstractLanguageHandler):
             enable_plotting: Whether to enable plot detection (ignored for Go)
             output_dir: Directory where plots should be saved (unused)
             timeout: Timeout for the code execution
+            **kwargs: Additional keyword arguments (e.g., on_stdout, on_stderr callbacks).
 
         Returns:
             tuple: (execution_result, empty_list_of_plots)
 
         """
         self.logger.warning("Go does not support plot extraction yet")
-        result = container.run(code, libraries, timeout=timeout)
+        result = container.run(code, libraries, timeout=timeout, **kwargs)
         return result, []
 
     def get_import_patterns(self, module: str) -> str:

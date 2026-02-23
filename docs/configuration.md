@@ -573,6 +573,12 @@ runtime_configs = {
 }
 ```
 
+!!! note "Automatic `PYTHONUNBUFFERED=1`"
+    LLM Sandbox automatically injects `PYTHONUNBUFFERED=1` into the container environment for Docker, Podman, and Kubernetes (default pod manifest) backends. This ensures Python output is flushed immediately, which is required for real-time streaming callbacks to work correctly. If you explicitly set `PYTHONUNBUFFERED` in your environment configuration, your value takes precedence.
+
+!!! warning "Security consideration for streaming callbacks"
+    When using `on_stdout`/`on_stderr` callbacks, be aware that callbacks receive **all raw decoded output** from the container. If the executed code emits secrets, credentials, or PII, these will be passed to your callbacks. Avoid logging or forwarding callback data to untrusted destinations without sanitization.
+
 ### Security Configuration (Docker/Podman)
 
 ```python

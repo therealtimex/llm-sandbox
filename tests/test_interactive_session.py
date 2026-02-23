@@ -415,7 +415,9 @@ def test_execute_command_delegation() -> None:
 
     result = session.execute_command("echo test")
     assert result == mock_output
-    session._backend_session.execute_command.assert_called_once_with("echo test", workdir=None)
+    session._backend_session.execute_command.assert_called_once_with(
+        "echo test", workdir=None, on_stdout=None, on_stderr=None
+    )
 
 
 @patch("llm_sandbox.interactive._create_backend_session", new=_stub_backend_session)
@@ -428,7 +430,9 @@ def test_execute_commands_delegation() -> None:
     commands: list[str | tuple[str, str | None]] = ["echo test1", "echo test2"]
     result = session.execute_commands(commands)
     assert result == mock_output
-    session._backend_session.execute_commands.assert_called_once_with(commands, workdir=None)
+    session._backend_session.execute_commands.assert_called_once_with(
+        commands, workdir=None, on_stdout=None, on_stderr=None
+    )
 
 
 @patch("llm_sandbox.interactive._create_backend_session", new=_stub_backend_session)
@@ -788,3 +792,92 @@ def test_handle_timeout_delegation() -> None:
     method(session)
 
     session._backend_session._handle_timeout.assert_called_once()
+
+
+@patch("llm_sandbox.interactive._create_backend_session", new=_stub_backend_session)
+def test_execute_command_with_callbacks() -> None:
+    """Test execute_command passes on_stdout/on_stderr to backend."""
+    session = InteractiveSandboxSession()
+    mock_output = ConsoleOutput(exit_code=0, stdout="ok", stderr="")
+    session._backend_session.execute_command = MagicMock(return_value=mock_output)
+
+    on_stdout = MagicMock()
+    on_stderr = MagicMock()
+
+    result = session.execute_command("echo test", on_stdout=on_stdout, on_stderr=on_stderr)
+    assert result == mock_output
+    session._backend_session.execute_command.assert_called_once_with(
+        "echo test", workdir=None, on_stdout=on_stdout, on_stderr=on_stderr
+    )
+
+
+@patch("llm_sandbox.interactive._create_backend_session", new=_stub_backend_session)
+def test_execute_commands_with_callbacks() -> None:
+    """Test execute_commands passes on_stdout/on_stderr to backend."""
+    session = InteractiveSandboxSession()
+    mock_output = ConsoleOutput(exit_code=0, stdout="ok", stderr="")
+    session._backend_session.execute_commands = MagicMock(return_value=mock_output)
+
+    on_stdout = MagicMock()
+    on_stderr = MagicMock()
+
+    commands: list[str | tuple[str, str | None]] = ["cmd1", "cmd2"]
+    result = session.execute_commands(commands, on_stdout=on_stdout, on_stderr=on_stderr)
+    assert result == mock_output
+    session._backend_session.execute_commands.assert_called_once_with(
+        commands, workdir=None, on_stdout=on_stdout, on_stderr=on_stderr
+    )
+
+
+@patch("llm_sandbox.interactive._create_backend_session", new=_stub_backend_session)
+def test_process_stream_output_with_callbacks() -> None:
+    """Test _process_stream_output passes callbacks to backend."""
+    session = InteractiveSandboxSession()
+    session._backend_session._process_stream_output = MagicMock(return_value=("out", "err"))
+
+    on_stdout = MagicMock()
+    on_stderr = MagicMock()
+
+    attr_name = "_process_stream_output"
+    method = getattr(InteractiveSandboxSession, attr_name)
+    result = method(session, "test_output", on_stdout=on_stdout, on_stderr=on_stderr)
+
+    assert result == ("out", "err")
+    session._backend_session._process_stream_output.assert_called_once_with(
+        "test_output", on_stdout=on_stdout, on_stderr=on_stderr
+    )
+
+
+@patch("llm_sandbox.interactive._create_backend_session", new=_stub_backend_session)
+def test_run_accepts_callbacks_without_error() -> None:
+    """Test that run() accepts on_stdout/on_stderr without error (API compatibility)."""
+    session = InteractiveSandboxSession(kernel_type=KernelType.IPYTHON)
+    session.container = session._backend_session.container
+    session.is_open = True
+    session.container_api = session._backend_session.container_api
+    _set_private(session, "_commands_dir", "/sandbox/.interactive/commands")
+    _set_private(session, "_results_dir", "/sandbox/.interactive/results")
+    _set_private(session, "_runner_ready", value=True)
+    session.settings.timeout = 2
+    session.settings.poll_interval = 0.01
+
+    session._backend_session.install = MagicMock()
+    _set_private(session, "_check_session_timeout", MagicMock())
+
+    def fake_copy_from_runtime(src: str, dest: str) -> None:
+        req_id = Path(src).stem.split("-")[-1]
+        payload = {"id": req_id, "success": True, "stdout": "hello", "stderr": ""}
+        Path(dest).write_text(json.dumps(payload), encoding="utf-8")
+
+    session._backend_session.copy_to_runtime = MagicMock()
+    session._backend_session.copy_from_runtime = MagicMock(side_effect=fake_copy_from_runtime)
+
+    def fake_execute_command(_command: str, **_: Any) -> ConsoleOutput:
+        return ConsoleOutput(exit_code=0, stdout="", stderr="")
+
+    session._backend_session.execute_command = MagicMock(side_effect=fake_execute_command)
+
+    result = session.run("print('hello')", on_stdout=lambda _: None, on_stderr=lambda _: None)
+
+    assert result.stdout == "hello"
+    assert result.exit_code == 0

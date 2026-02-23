@@ -12,7 +12,7 @@ from typing import Any, cast
 from llm_sandbox.const import SupportedLanguage
 from llm_sandbox.core.config import SessionConfig
 from llm_sandbox.core.mixins import CommandExecutionMixin, ContainerAPI, FileOperationsMixin, TimeoutMixin
-from llm_sandbox.data import ConsoleOutput
+from llm_sandbox.data import ConsoleOutput, StreamCallback
 from llm_sandbox.exceptions import (
     LanguageHandlerNotInitializedError,
     LibraryInstallationNotSupportedError,
@@ -295,7 +295,11 @@ class BaseSession(
         self.execute_commands(library_installation_commands)
 
     def execute_commands(
-        self, commands: list[str | tuple[str, str | None]], workdir: str | None = None
+        self,
+        commands: list[str | tuple[str, str | None]],
+        workdir: str | None = None,
+        on_stdout: StreamCallback | None = None,
+        on_stderr: StreamCallback | None = None,
     ) -> ConsoleOutput:
         r"""Execute a sequence of commands within the sandbox container.
 
@@ -311,6 +315,8 @@ class BaseSession(
                     `specific_workdir`. If `specific_workdir` is None, the container's default may be used.
             workdir (str | None, optional): The default working directory to use for commands
                                         that do not specify their own. Defaults to None.
+            on_stdout (StreamCallback | None): Optional callback invoked with each decoded stdout chunk.
+            on_stderr (StreamCallback | None): Optional callback invoked with each decoded stderr chunk.
 
         Returns:
             ConsoleOutput: The output of the last successfully executed command.
@@ -326,9 +332,9 @@ class BaseSession(
                 and (isinstance(command[1], str) or command[1] is None)
             ):
                 cmd_str, cmd_workdir = command
-                output = self.execute_command(cmd_str, workdir=cmd_workdir)
+                output = self.execute_command(cmd_str, workdir=cmd_workdir, on_stdout=on_stdout, on_stderr=on_stderr)
             else:
-                output = self.execute_command(command, workdir=workdir)
+                output = self.execute_command(command, workdir=workdir, on_stdout=on_stdout, on_stderr=on_stderr)
 
             if output.exit_code:
                 return output
@@ -430,8 +436,15 @@ class BaseSession(
             self._log(f"Installing pre-configured libraries: {self._initial_libraries}", "info")
             self.install(self._initial_libraries)
 
-    def run(self, code: str, libraries: list | None = None, timeout: float | None = None) -> ConsoleOutput:
-        r"""Run the provided code within the Docker sandbox session.
+    def run(
+        self,
+        code: str,
+        libraries: list | None = None,
+        timeout: float | None = None,
+        on_stdout: StreamCallback | None = None,
+        on_stderr: StreamCallback | None = None,
+    ) -> ConsoleOutput:
+        r"""Run the provided code within the sandbox session.
 
         This method performs the following steps:
         1. Ensures the session is open (container is running).
@@ -447,6 +460,13 @@ class BaseSession(
                                             Defaults to None.
             timeout (float | None, optional): The timeout for the execution of the code.
                 Defaults to None.
+            on_stdout (StreamCallback | None): Optional callback invoked with each decoded stdout
+                chunk as it arrives during execution. When provided, streaming mode is automatically
+                enabled even if the session was created with ``stream=False``. The full accumulated
+                stdout is still returned in the ``ConsoleOutput``. Note: callbacks execute in a
+                worker thread; ensure your callback is thread-safe.
+            on_stderr (StreamCallback | None): Optional callback invoked with each decoded stderr
+                chunk as it arrives during execution. Same threading note as ``on_stdout``.
 
         Returns:
             ConsoleOutput: An object containing the stdout, stderr, and exit code from the code execution.
@@ -505,6 +525,8 @@ class BaseSession(
                 return self.execute_commands(
                     cast("list[str | tuple[str, str | None]]", commands),
                     workdir=self.config.workdir,
+                    on_stdout=on_stdout,
+                    on_stderr=on_stderr,
                 )
             finally:
                 # Clean up the temporary file if it was created

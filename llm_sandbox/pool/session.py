@@ -5,7 +5,7 @@ from types import TracebackType
 from typing import TYPE_CHECKING, Any
 
 from llm_sandbox.const import EncodingErrorsType, SandboxBackend
-from llm_sandbox.data import ConsoleOutput, ExecutionResult
+from llm_sandbox.data import ConsoleOutput, ExecutionResult, StreamCallback
 from llm_sandbox.pool.base import ContainerPoolManager, PooledContainer
 from llm_sandbox.security import SecurityPolicy
 
@@ -296,13 +296,22 @@ class PooledSandboxSession:
                 msg = f"Unsupported backend: {self.backend}"
                 raise RuntimeError(msg)
 
-    def run(self, code: str, libraries: list | None = None, timeout: float | None = None) -> ConsoleOutput:
+    def run(
+        self,
+        code: str,
+        libraries: list | None = None,
+        timeout: float | None = None,
+        on_stdout: StreamCallback | None = None,
+        on_stderr: StreamCallback | None = None,
+    ) -> ConsoleOutput:
         """Run code in the pooled container.
 
         Args:
             code: Code to execute
             libraries: Libraries to install before execution
             timeout: Execution timeout
+            on_stdout: Optional callback invoked with each decoded stdout chunk in real time.
+            on_stderr: Optional callback invoked with each decoded stderr chunk in real time.
 
         Returns:
             ConsoleOutput with execution results
@@ -315,7 +324,9 @@ class PooledSandboxSession:
         if not self._backend_session:
             raise SessionNotOpenError
 
-        return self._backend_session.run(code, libraries=libraries, timeout=timeout)
+        return self._backend_session.run(
+            code, libraries=libraries, timeout=timeout, on_stdout=on_stdout, on_stderr=on_stderr
+        )
 
     def execute_command(self, command: str, workdir: str | None = None) -> ConsoleOutput:
         """Execute a command in the pooled container.
@@ -514,6 +525,8 @@ class ArtifactPooledSandboxSession:
         libraries: list | None = None,
         timeout: float | None = None,
         clear_plots: bool = False,
+        on_stdout: StreamCallback | None = None,
+        on_stderr: StreamCallback | None = None,
     ) -> ExecutionResult:
         """Run code and extract artifacts.
 
@@ -522,6 +535,8 @@ class ArtifactPooledSandboxSession:
             libraries: Libraries to install
             timeout: Execution timeout
             clear_plots: Clear existing plots before running
+            on_stdout: Optional callback invoked with each decoded stdout chunk in real time.
+            on_stderr: Optional callback invoked with each decoded stderr chunk in real time.
 
         Returns:
             ExecutionResult with plots
@@ -556,6 +571,8 @@ class ArtifactPooledSandboxSession:
             enable_plotting=self.enable_plotting,
             output_dir="/tmp/sandbox_plots",
             timeout=int(effective_timeout),
+            on_stdout=on_stdout,
+            on_stderr=on_stderr,
         )
 
         return ExecutionResult(
