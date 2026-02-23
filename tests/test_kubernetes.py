@@ -1,4 +1,3 @@
-# ruff: noqa: PT011, PT012
 
 """Tests for Kubernetes backend implementation."""
 

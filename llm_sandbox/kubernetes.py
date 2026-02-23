@@ -123,13 +123,19 @@ class KubernetesContainerAPI:
                 chunk = resp.read_stdout()
                 stdout_output += chunk
                 if on_stdout:
-                    on_stdout(chunk)
+                    try:
+                        on_stdout(chunk)
+                    except Exception:  # noqa: BLE001
+                        self.logger.warning("on_stdout callback raised an exception")
 
             if resp.peek_stderr():
                 chunk = resp.read_stderr()
                 stderr_output += chunk
                 if on_stderr:
-                    on_stderr(chunk)
+                    try:
+                        on_stderr(chunk)
+                    except Exception:  # noqa: BLE001
+                        self.logger.warning("on_stderr callback raised an exception")
 
         # Ensure we wait for the command to complete properly
         resp.close()
@@ -452,9 +458,12 @@ class SandboxKubernetesSession(BaseSession):
         }
 
         containers = pod_manifest["spec"]["containers"]  # type: ignore[index]
-        env_list = [{"name": "PYTHONUNBUFFERED", "value": "1"}]
+        env_list: list[dict[str, str]] = []
         if self.env_vars:
             env_list.extend({"name": key, "value": value} for key, value in self.env_vars.items())
+        # Inject PYTHONUNBUFFERED=1 only if the user hasn't already set it
+        if not any(e["name"] == "PYTHONUNBUFFERED" for e in env_list):
+            env_list.insert(0, {"name": "PYTHONUNBUFFERED", "value": "1"})
         containers[0]["env"] = env_list
         return pod_manifest
 

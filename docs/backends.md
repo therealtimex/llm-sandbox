@@ -676,6 +676,23 @@ with SandboxSession(
 
 Podman supports the same `on_stdout`/`on_stderr` streaming callbacks as Docker. Since `SandboxPodmanSession` inherits from `SandboxDockerSession`, `PYTHONUNBUFFERED=1` is injected automatically.
 
+```python
+from podman import PodmanClient
+from llm_sandbox import SandboxSession, SandboxBackend
+
+client = PodmanClient(base_url="unix:///run/user/1000/podman/podman.sock")
+
+with SandboxSession(
+    backend=SandboxBackend.PODMAN,
+    client=client,
+    lang="python",
+) as session:
+    result = session.run(
+        "import time\nfor i in range(3):\n    print(f'Step {i}')\n    time.sleep(1)",
+        on_stdout=lambda chunk: print(f"[live] {chunk}", end=""),
+    )
+```
+
 ### Podman-Specific Features
 
 #### Podman Pods

@@ -305,6 +305,9 @@ StreamCallback = Callable[[str], None] | None
 
 A type alias for real-time output streaming callbacks. When provided to `run()`, `execute_command()`, or `execute_commands()`, the callback is invoked with each decoded output chunk as it arrives, enabling real-time output processing.
 
+!!! warning "Security consideration"
+    Callbacks receive **all raw output** from the container, which may include secrets, credentials, or PII if the executed code emits them. Avoid logging or forwarding callback data to untrusted destinations without sanitization.
+
 ### Protocol Types
 
 ```python
@@ -327,8 +330,10 @@ class ContainerProtocol(Protocol):
         self,
         code: str,
         libraries: list | None = None,
+        timeout: int = 30,
         on_stdout: StreamCallback = None,
         on_stderr: StreamCallback = None,
+        **kwargs: Any,
     ) -> Any:
         ...
 ```

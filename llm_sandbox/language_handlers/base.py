@@ -25,7 +25,7 @@ if TYPE_CHECKING:
             """Get archive of files from container."""
             ...
 
-        def run(self, code: str, libraries: list | None = None, timeout: int = 30) -> Any:
+        def run(self, code: str, libraries: list | None = None, timeout: int = 30, **kwargs: Any) -> Any:
             """Run code in the container."""
             ...
 
