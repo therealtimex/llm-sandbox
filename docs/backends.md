@@ -192,6 +192,18 @@ with SandboxSession(
     pass
 ```
 
+#### Real-Time Output Streaming
+
+Docker supports real-time output streaming via `on_stdout` and `on_stderr` callbacks on `run()` and `execute_command()`. When callbacks are provided, streaming mode is enabled automatically. `PYTHONUNBUFFERED=1` is injected into the container environment at creation time so Python output flushes after every write.
+
+```python
+with SandboxSession(backend=SandboxBackend.DOCKER, lang="python") as session:
+    result = session.run(
+        "import time\nfor i in range(3):\n    print(f'Step {i}')\n    time.sleep(1)",
+        on_stdout=lambda chunk: print(f"[live] {chunk}", end=""),
+    )
+```
+
 ### Docker Best Practices
 
 1. **Use specific image tags**
@@ -434,6 +446,22 @@ FileNotFoundError: [Errno 2] No usable temporary directory found in ['/tmp', '/v
 
 For a complete working example, see [`examples/k8s_readonly_file_system.py`](https://github.com/vndee/llm-sandbox/blob/main/examples/k8s_readonly_file_system.py) in the repository.
 
+#### Real-Time Output Streaming
+
+Kubernetes supports real-time output streaming through the same `on_stdout`/`on_stderr` callback interface. The Kubernetes exec API is inherently streaming (using `_preload_content=False`), so callbacks receive chunks as they arrive. `PYTHONUNBUFFERED=1` is included in the default pod manifest's environment. Users with custom `pod_manifest` should add it manually if streaming is needed.
+
+```python
+with SandboxSession(
+    backend=SandboxBackend.KUBERNETES,
+    lang="python",
+    kube_namespace="default",
+) as session:
+    result = session.run(
+        "import time\nfor i in range(3):\n    print(f'Step {i}')\n    time.sleep(1)",
+        on_stdout=lambda chunk: print(f"[live] {chunk}", end=""),
+    )
+```
+
 ### Advanced Kubernetes Features
 
 #### Persistent Volumes
@@ -643,6 +671,10 @@ with SandboxSession(
 ) as session:
     pass
 ```
+
+#### Real-Time Output Streaming
+
+Podman supports the same `on_stdout`/`on_stderr` streaming callbacks as Docker. Since `SandboxPodmanSession` inherits from `SandboxDockerSession`, `PYTHONUNBUFFERED=1` is injected automatically.
 
 ### Podman-Specific Features
 

@@ -22,6 +22,149 @@ This section provides practical examples of using LLM Sandbox for executing LLM-
 --8<-- "examples/llamaindex_tool.py"
 ```
 
+## Real-Time Output Streaming
+
+### Basic Streaming Callbacks
+
+Receive output in real-time as code executes, rather than waiting for completion:
+
+```python
+from llm_sandbox import SandboxSession
+
+with SandboxSession(lang="python") as session:
+    result = session.run("""
+import time
+for i in range(5):
+    print(f"Processing step {i + 1}/5...")
+    time.sleep(1)
+print("Done!")
+    """,
+        on_stdout=lambda chunk: print(f"[live] {chunk}", end=""),
+    )
+    # result.stdout still has the full accumulated output
+```
+
+### Progress Tracking
+
+Extract structured progress information from the output stream:
+
+```python
+from llm_sandbox import SandboxSession
+
+code = """
+import time
+total = 20
+for i in range(total):
+    time.sleep(0.2)
+    progress = (i + 1) / total * 100
+    print(f"PROGRESS:{progress:.0f}")
+print("COMPLETE")
+"""
+
+def on_output(chunk: str) -> None:
+    for line in chunk.strip().split("\\n"):
+        if line.startswith("PROGRESS:"):
+            pct = int(line.split(":")[1])
+            bar_len = 30
+            filled = int(bar_len * pct / 100)
+            bar = "#" * filled + "-" * (bar_len - filled)
+            print(f"\r[{bar}] {pct}%", end="", flush=True)
+        elif line == "COMPLETE":
+            print("\nDone!")
+
+with SandboxSession(lang="python") as session:
+    session.run(code, on_stdout=on_output)
+```
+
+### Log Collection with Timestamps
+
+Build structured logs with timing metadata:
+
+```python
+import time
+from llm_sandbox import SandboxSession
+
+log_entries: list[dict] = []
+start_time = time.time()
+
+def log_stdout(chunk: str) -> None:
+    elapsed = time.time() - start_time
+    log_entries.append({
+        "stream": "stdout",
+        "time": f"{elapsed:.2f}s",
+        "content": chunk.rstrip(),
+    })
+
+def log_stderr(chunk: str) -> None:
+    elapsed = time.time() - start_time
+    log_entries.append({
+        "stream": "stderr",
+        "time": f"{elapsed:.2f}s",
+        "content": chunk.rstrip(),
+    })
+
+with SandboxSession(lang="python") as session:
+    session.run("""
+import time
+print("Starting data processing...")
+time.sleep(0.5)
+print("Loading dataset...")
+time.sleep(0.5)
+print("Training model...")
+time.sleep(1)
+print("Evaluation complete: accuracy=0.95")
+    """, on_stdout=log_stdout, on_stderr=log_stderr)
+
+for entry in log_entries:
+    print(f"[{entry['time']}] [{entry['stream']}] {entry['content']}")
+```
+
+### Streaming with AI Agent Integration
+
+Use streaming callbacks to provide real-time feedback during AI-generated code execution:
+
+```python
+from llm_sandbox import SandboxSession
+
+class StreamingCodeExecutor:
+    """Execute AI-generated code with real-time output forwarding."""
+
+    def __init__(self, on_output=None):
+        self.on_output = on_output or print
+
+    def execute(self, code: str, language: str = "python") -> dict:
+        stdout_chunks: list[str] = []
+        stderr_chunks: list[str] = []
+
+        def on_stdout(chunk: str) -> None:
+            stdout_chunks.append(chunk)
+            self.on_output(f"[stdout] {chunk}")
+
+        def on_stderr(chunk: str) -> None:
+            stderr_chunks.append(chunk)
+            self.on_output(f"[stderr] {chunk}")
+
+        with SandboxSession(lang=language) as session:
+            result = session.run(
+                code,
+                on_stdout=on_stdout,
+                on_stderr=on_stderr,
+            )
+
+        return {
+            "success": result.exit_code == 0,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "chunks_received": len(stdout_chunks) + len(stderr_chunks),
+        }
+
+# Usage
+executor = StreamingCodeExecutor()
+result = executor.execute("for i in range(5): print(f'Step {i}')")
+```
+
+For the complete runnable demo, see [streaming_callbacks_demo.py](https://github.com/vndee/llm-sandbox/blob/main/examples/streaming_callbacks_demo.py).
+
 ## Code Generation Patterns
 
 ### 1. Self-Correcting Code Generator
