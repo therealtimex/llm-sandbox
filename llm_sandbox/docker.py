@@ -9,6 +9,7 @@ from docker.errors import ImageNotFound, NotFound
 from llm_sandbox.const import DefaultImage, EncodingErrorsType, SupportedLanguage
 from llm_sandbox.core.config import SessionConfig
 from llm_sandbox.core.session_base import BaseSession
+from llm_sandbox.data import StreamCallback
 from llm_sandbox.exceptions import ContainerError, ImagePullError, NotOpenSessionError
 from llm_sandbox.security import SecurityPolicy
 
@@ -42,9 +43,11 @@ class DockerContainerAPI:
     def execute_command(self, container: Any, command: str, **kwargs: Any) -> tuple[int, Any]:
         """Execute command in Docker container."""
         workdir = kwargs.get("workdir")
+        # Allow callers to override the stream mode (e.g., when callbacks are provided).
+        stream = kwargs.get("stream", self.stream)
         exec_kwargs: dict[str, Any] = {
             "cmd": command,
-            "stream": self.stream,
+            "stream": stream,
             "tty": False,
             "stderr": True,
             "stdout": True,
@@ -224,24 +227,45 @@ class SandboxDockerSession(BaseSession):
         # This handles edge cases where Docker might return unexpected formats
         return stdout_output, stderr_output
 
-    def _process_stream_output(self, output: Any) -> tuple[str, str]:
-        """Process streaming Docker output."""
+    def _process_stream_output(
+        self,
+        output: Any,
+        on_stdout: StreamCallback | None = None,
+        on_stderr: StreamCallback | None = None,
+    ) -> tuple[str, str]:
+        """Process streaming Docker output.
+
+        Args:
+            output: The streaming output from Docker exec_run.
+            on_stdout: Optional callback invoked with each decoded stdout chunk.
+            on_stderr: Optional callback invoked with each decoded stderr chunk.
+
+        Returns:
+            A tuple of (accumulated_stdout, accumulated_stderr).
+
+        """
         stdout_output, stderr_output = "", ""
 
         try:
             for stdout_chunk, stderr_chunk in output:
                 if stdout_chunk:
-                    stdout_output += (
+                    decoded = (
                         stdout_chunk.decode("utf-8", errors=self.config.encoding_errors)
                         if isinstance(stdout_chunk, bytes)
                         else str(stdout_chunk)
                     )
+                    stdout_output += decoded
+                    if on_stdout:
+                        on_stdout(decoded)
                 if stderr_chunk:
-                    stderr_output += (
+                    decoded = (
                         stderr_chunk.decode("utf-8", errors=self.config.encoding_errors)
                         if isinstance(stderr_chunk, bytes)
                         else str(stderr_chunk)
                     )
+                    stderr_output += decoded
+                    if on_stderr:
+                        on_stderr(decoded)
         except Exception as e:
             from llm_sandbox.exceptions import SandboxTimeoutError
 

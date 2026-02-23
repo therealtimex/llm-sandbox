@@ -15,7 +15,7 @@ from kubernetes.stream import stream
 from llm_sandbox.const import DefaultImage, EncodingErrorsType, SupportedLanguage
 from llm_sandbox.core.config import SessionConfig
 from llm_sandbox.core.session_base import BaseSession
-from llm_sandbox.data import ConsoleOutput
+from llm_sandbox.data import ConsoleOutput, StreamCallback
 from llm_sandbox.exceptions import CommandEmptyError, ContainerError, NotOpenSessionError
 from llm_sandbox.k8s_utils import retry_k8s_api_call
 from llm_sandbox.security import SecurityPolicy
@@ -86,9 +86,16 @@ class KubernetesContainerAPI:
             self.logger.debug("Failed to delete pod %s: %s", container, e)
 
     def execute_command(self, container: Any, command: str, **kwargs: Any) -> tuple[int, Any]:
-        """Execute command in Kubernetes pod."""
+        """Execute command in Kubernetes pod.
+
+        Supports optional ``on_stdout`` / ``on_stderr`` keyword arguments.
+        When provided, each decoded chunk is forwarded to the respective
+        callback in real time while still accumulating the full output.
+        """
         workdir = kwargs.get("workdir")
         container_name = kwargs.get("container_name")  # Get the specific container name
+        on_stdout: StreamCallback | None = kwargs.get("on_stdout")
+        on_stderr: StreamCallback | None = kwargs.get("on_stderr")
 
         exec_command = [SH_SHELL, "-c", f"cd {workdir} && {command}"] if workdir else [SH_SHELL, "-c", command]
 
@@ -114,10 +121,14 @@ class KubernetesContainerAPI:
             if resp.peek_stdout():
                 chunk = resp.read_stdout()
                 stdout_output += chunk
+                if on_stdout:
+                    on_stdout(chunk)
 
             if resp.peek_stderr():
                 chunk = resp.read_stderr()
                 stderr_output += chunk
+                if on_stderr:
+                    on_stderr(chunk)
 
         # Ensure we wait for the command to complete properly
         resp.close()
@@ -627,8 +638,14 @@ class SandboxKubernetesSession(BaseSession):
 
         return self.container_api.copy_from_container(self.container, path, container_name=self.container_name)
 
-    def execute_command(self, command: str, workdir: str | None = None) -> ConsoleOutput:
-        """Override to pass container name for Kubernetes."""
+    def execute_command(
+        self,
+        command: str,
+        workdir: str | None = None,
+        on_stdout: StreamCallback | None = None,
+        on_stderr: StreamCallback | None = None,
+    ) -> ConsoleOutput:
+        """Override to pass container name and streaming callbacks for Kubernetes."""
         if not command:
             raise CommandEmptyError
 
@@ -639,7 +656,13 @@ class SandboxKubernetesSession(BaseSession):
             self.logger.info("Executing command: %s", command)
 
         exit_code, output = self.container_api.execute_command(
-            self.container, command, workdir=workdir, stream=self.stream, container_name=self.container_name
+            self.container,
+            command,
+            workdir=workdir,
+            stream=self.stream,
+            container_name=self.container_name,
+            on_stdout=on_stdout,
+            on_stderr=on_stderr,
         )
 
         stdout, stderr = self._process_output(output)

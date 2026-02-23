@@ -386,7 +386,10 @@ class TestBaseSessionCommandExecution:
         assert result.stdout == "output2"  # Last command's output
         expected_call_count = 2
         assert mock_execute_command.call_count == expected_call_count
-        mock_execute_command.assert_has_calls([call("ls", workdir="/test"), call("pwd", workdir="/test")])
+        mock_execute_command.assert_has_calls([
+            call("ls", workdir="/test", on_stdout=None, on_stderr=None),
+            call("pwd", workdir="/test", on_stdout=None, on_stderr=None),
+        ])
 
     @patch.object(MockBaseSession, "execute_command")
     def test_execute_commands_tuple_commands(self, mock_execute_command: Mock) -> None:
@@ -400,7 +403,10 @@ class TestBaseSessionCommandExecution:
         result = self.session.execute_commands(commands)
 
         assert result.stdout == "output2"
-        mock_execute_command.assert_has_calls([call("ls", workdir="/custom1"), call("pwd", workdir="/custom2")])
+        mock_execute_command.assert_has_calls([
+            call("ls", workdir="/custom1", on_stdout=None, on_stderr=None),
+            call("pwd", workdir="/custom2", on_stdout=None, on_stderr=None),
+        ])
 
     @patch.object(MockBaseSession, "execute_command")
     def test_execute_commands_mixed_commands(self, mock_execute_command: Mock) -> None:
@@ -414,7 +420,10 @@ class TestBaseSessionCommandExecution:
         result = self.session.execute_commands(commands, workdir="/default")
 
         assert result.stdout == "output2"
-        mock_execute_command.assert_has_calls([call("ls", workdir="/default"), call("pwd", workdir="/custom")])
+        mock_execute_command.assert_has_calls([
+            call("ls", workdir="/default", on_stdout=None, on_stderr=None),
+            call("pwd", workdir="/custom", on_stdout=None, on_stderr=None),
+        ])
 
     @patch.object(MockBaseSession, "execute_command")
     def test_execute_commands_command_failure(self, mock_execute_command: Mock) -> None:

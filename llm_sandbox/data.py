@@ -7,8 +7,14 @@ and extracted plots or other file artifacts.
 
 import json
 import warnings
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
+
+# Type alias for streaming output callbacks.
+# A StreamCallback receives a decoded string chunk from stdout or stderr
+# as it arrives during code execution, enabling real-time output processing.
+StreamCallback = Callable[[str], None]
 
 
 class FileType(Enum):

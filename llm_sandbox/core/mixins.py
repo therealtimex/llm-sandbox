@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 if TYPE_CHECKING:
     from types import TracebackType
 
-from llm_sandbox.data import ConsoleOutput
+from llm_sandbox.data import ConsoleOutput, StreamCallback
 from llm_sandbox.exceptions import CommandEmptyError, NotOpenSessionError, SandboxTimeoutError, SecurityError
 
 CLEANUP_THREAD_TIMEOUT = 0.1
@@ -274,8 +274,25 @@ class CommandExecutionMixin:
     logger: Any
     stream: bool
 
-    def execute_command(self, command: str, workdir: str | None = None) -> ConsoleOutput:
-        """Execute command with common logic."""
+    def execute_command(
+        self,
+        command: str,
+        workdir: str | None = None,
+        on_stdout: StreamCallback | None = None,
+        on_stderr: StreamCallback | None = None,
+    ) -> ConsoleOutput:
+        """Execute command with common logic.
+
+        Args:
+            command: The command to execute.
+            workdir: Optional working directory for the command.
+            on_stdout: Optional callback invoked with each decoded stdout chunk in real time.
+            on_stderr: Optional callback invoked with each decoded stderr chunk in real time.
+
+        Returns:
+            ConsoleOutput with the accumulated stdout, stderr, and exit code.
+
+        """
         if not command:
             raise CommandEmptyError
 
@@ -285,11 +302,14 @@ class CommandExecutionMixin:
         if self.verbose:
             self.logger.info("Executing command: %s", command)
 
+        # When callbacks are provided, force streaming mode so chunks arrive incrementally.
+        effective_stream = self.stream or (on_stdout is not None) or (on_stderr is not None)
+
         exit_code, output = self.container_api.execute_command(
-            self.container, command, workdir=workdir, stream=self.stream
+            self.container, command, workdir=workdir, stream=effective_stream
         )
 
-        stdout, stderr = self._process_output(output)
+        stdout, stderr = self._process_output(output, effective_stream, on_stdout=on_stdout, on_stderr=on_stderr)
 
         if self.verbose:
             if stdout:
@@ -299,11 +319,18 @@ class CommandExecutionMixin:
 
         return ConsoleOutput(exit_code=exit_code or 0, stdout=stdout, stderr=stderr)
 
-    def _process_output(self, output: Any) -> tuple[str, str]:
+    def _process_output(
+        self,
+        output: Any,
+        is_stream: bool | None = None,
+        on_stdout: StreamCallback | None = None,
+        on_stderr: StreamCallback | None = None,
+    ) -> tuple[str, str]:
         """Process command output - backend specific implementation."""
-        if not self.stream:
+        stream_mode = is_stream if is_stream is not None else self.stream
+        if not stream_mode:
             return self._process_non_stream_output(output)
-        return self._process_stream_output(output)
+        return self._process_stream_output(output, on_stdout=on_stdout, on_stderr=on_stderr)
 
     @abstractmethod
     def _process_non_stream_output(self, output: Any) -> tuple[str, str]:
@@ -311,6 +338,11 @@ class CommandExecutionMixin:
         ...
 
     @abstractmethod
-    def _process_stream_output(self, output: Any) -> tuple[str, str]:
+    def _process_stream_output(
+        self,
+        output: Any,
+        on_stdout: StreamCallback | None = None,
+        on_stderr: StreamCallback | None = None,
+    ) -> tuple[str, str]:
         """Process streaming output."""
         ...

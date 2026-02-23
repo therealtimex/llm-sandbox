@@ -247,6 +247,7 @@ class AbstractLanguageHandler(ABC):
         enable_plotting: bool = True,
         output_dir: str = "/tmp/sandbox_plots",
         timeout: int = 30,
+        **kwargs: Any,
     ) -> tuple[Any, list[PlotOutput]]:
         """Run code and extract artifacts (plots) in a language-specific manner.
 
@@ -261,6 +262,8 @@ class AbstractLanguageHandler(ABC):
             enable_plotting: Whether to enable plot detection and extraction
             output_dir: Directory where plots should be saved
             timeout: Timeout for the code execution
+            **kwargs: Additional keyword arguments passed to container.run()
+                (e.g., on_stdout, on_stderr callbacks for real-time streaming).
 
         Returns:
             tuple: (execution_result, list_of_plots)
@@ -272,7 +275,7 @@ class AbstractLanguageHandler(ABC):
             injected_code = self.inject_plot_detection_code(code)
 
             # Run the code with plot detection
-            result = container.run(injected_code, libraries, timeout)
+            result = container.run(injected_code, libraries, timeout, **kwargs)
 
             # Extract plots
             plots = self.extract_plots(container, output_dir)
@@ -280,7 +283,7 @@ class AbstractLanguageHandler(ABC):
             return result, plots
 
         # Run code without plot detection
-        result = container.run(code, libraries, timeout)
+        result = container.run(code, libraries, timeout, **kwargs)
         return result, []
 
     @abstractmethod
