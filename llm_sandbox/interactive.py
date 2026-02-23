@@ -435,9 +435,7 @@ class InteractiveSandboxSession(BaseSession):
             ConsoleOutput: The command output
 
         """
-        return self._backend_session.execute_command(
-            command, workdir=workdir, on_stdout=on_stdout, on_stderr=on_stderr
-        )
+        return self._backend_session.execute_command(command, workdir=workdir, on_stdout=on_stdout, on_stderr=on_stderr)
 
     def execute_commands(
         self,

@@ -1,4 +1,4 @@
-# ruff: noqa: SLF001, PLR2004, ARG002, PT011, PT012
+# ruff: noqa: PT011, PT012
 
 """Tests for Kubernetes backend implementation."""
 
@@ -129,7 +129,10 @@ class TestSandboxKubernetesSessionInit:
         assert manifest["kind"] == "Pod"
         assert manifest["metadata"]["namespace"] == "default"
         assert manifest["spec"]["containers"][0]["image"] == DefaultImage.PYTHON
-        assert manifest["spec"]["containers"][0]["env"] == [{"name": "TEST_VAR", "value": "test_value"}]
+        env_list = manifest["spec"]["containers"][0]["env"]
+        env_names = {e["name"] for e in env_list}
+        assert {"PYTHONUNBUFFERED", "TEST_VAR"} <= env_names
+        assert {"name": "TEST_VAR", "value": "test_value"} in env_list
 
 
 class TestSandboxKubernetesSessionOpen:
@@ -1156,8 +1159,8 @@ class TestSandboxKubernetesSessionEdgeCases:
         manifest = session.pod_manifest
         containers = manifest["spec"]["containers"]
 
-        # Should not have env section when no env_vars provided
-        assert "env" not in containers[0]
+        # Should only have the default PYTHONUNBUFFERED env var when no env_vars provided
+        assert containers[0]["env"] == [{"name": "PYTHONUNBUFFERED", "value": "1"}]
 
     @patch("kubernetes.config.load_kube_config")
     @patch("llm_sandbox.kubernetes.CoreV1Api")
@@ -1678,9 +1681,11 @@ class TestSandboxKubernetesSessionComplexScenarios:
         # Verify custom image is used
         assert container["image"] == "custom:latest"
 
-        # Verify all environment variables are present
+        # Verify all environment variables are present (plus PYTHONUNBUFFERED)
         env_vars = {env["name"]: env["value"] for env in container["env"]}
-        assert env_vars == complex_env_vars
+        for key, value in complex_env_vars.items():
+            assert env_vars[key] == value
+        assert env_vars["PYTHONUNBUFFERED"] == "1"
 
     @patch("kubernetes.config.load_kube_config")
     @patch("llm_sandbox.kubernetes.CoreV1Api")

@@ -1,4 +1,3 @@
-
 """Tests for real-time output streaming callbacks (issue #149).
 
 Tests cover:
@@ -40,7 +39,7 @@ class TestStreamCallbackType:
 
     def test_stream_callback_exported_from_package(self) -> None:
         """Test that StreamCallback is exported from the top-level package."""
-        from llm_sandbox import StreamCallback as StreamCallbackReexport  # noqa: PLC0415
+        from llm_sandbox import StreamCallback as StreamCallbackReexport
 
         assert StreamCallbackReexport is StreamCallback
 
@@ -131,9 +130,7 @@ class TestDockerStreamOutputCallbacks:
 
     @patch("llm_sandbox.docker.docker.from_env")
     @patch("llm_sandbox.language_handlers.factory.LanguageHandlerFactory.create_handler")
-    def test_no_callbacks_still_works(
-        self, mock_create_handler: MagicMock, mock_docker_from_env: MagicMock
-    ) -> None:
+    def test_no_callbacks_still_works(self, mock_create_handler: MagicMock, mock_docker_from_env: MagicMock) -> None:
         """Test that output processing works without any callbacks (backward compatibility)."""
         mock_handler = MagicMock()
         mock_create_handler.return_value = mock_handler
@@ -210,9 +207,7 @@ class TestDockerStreamOutputCallbacks:
 
     @patch("llm_sandbox.docker.docker.from_env")
     @patch("llm_sandbox.language_handlers.factory.LanguageHandlerFactory.create_handler")
-    def test_empty_stream_with_callbacks(
-        self, mock_create_handler: MagicMock, mock_docker_from_env: MagicMock
-    ) -> None:
+    def test_empty_stream_with_callbacks(self, mock_create_handler: MagicMock, mock_docker_from_env: MagicMock) -> None:
         """Test callbacks with empty stream."""
         mock_handler = MagicMock()
         mock_create_handler.return_value = mock_handler
@@ -241,9 +236,7 @@ class TestAutoStreamEnablement:
 
     @patch("llm_sandbox.docker.docker.from_env")
     @patch("llm_sandbox.language_handlers.factory.LanguageHandlerFactory.create_handler")
-    def test_callbacks_enable_streaming(
-        self, mock_create_handler: MagicMock, mock_docker_from_env: MagicMock
-    ) -> None:
+    def test_callbacks_enable_streaming(self, mock_create_handler: MagicMock, mock_docker_from_env: MagicMock) -> None:
         """Test that providing callbacks forces streaming mode on."""
         mock_handler = MagicMock()
         mock_create_handler.return_value = mock_handler
@@ -401,9 +394,7 @@ class TestEndToEndStreamingDocker:
 
     @patch("llm_sandbox.docker.docker.from_env")
     @patch("llm_sandbox.language_handlers.factory.LanguageHandlerFactory.create_handler")
-    def test_full_streaming_pipeline(
-        self, mock_create_handler: MagicMock, mock_docker_from_env: MagicMock
-    ) -> None:
+    def test_full_streaming_pipeline(self, mock_create_handler: MagicMock, mock_docker_from_env: MagicMock) -> None:
         """Test the full callback pipeline from execute_command through to Docker streaming."""
         mock_handler = MagicMock()
         mock_create_handler.return_value = mock_handler
@@ -437,9 +428,7 @@ class TestEndToEndStreamingDocker:
 
     @patch("llm_sandbox.docker.docker.from_env")
     @patch("llm_sandbox.language_handlers.factory.LanguageHandlerFactory.create_handler")
-    def test_only_stdout_callback(
-        self, mock_create_handler: MagicMock, mock_docker_from_env: MagicMock
-    ) -> None:
+    def test_only_stdout_callback(self, mock_create_handler: MagicMock, mock_docker_from_env: MagicMock) -> None:
         """Test providing only on_stdout callback."""
         mock_handler = MagicMock()
         mock_create_handler.return_value = mock_handler
@@ -460,9 +449,7 @@ class TestEndToEndStreamingDocker:
 
     @patch("llm_sandbox.docker.docker.from_env")
     @patch("llm_sandbox.language_handlers.factory.LanguageHandlerFactory.create_handler")
-    def test_only_stderr_callback(
-        self, mock_create_handler: MagicMock, mock_docker_from_env: MagicMock
-    ) -> None:
+    def test_only_stderr_callback(self, mock_create_handler: MagicMock, mock_docker_from_env: MagicMock) -> None:
         """Test providing only on_stderr callback."""
         mock_handler = MagicMock()
         mock_create_handler.return_value = mock_handler
@@ -585,9 +572,7 @@ class TestBackwardCompatibility:
 
     @patch("llm_sandbox.docker.docker.from_env")
     @patch("llm_sandbox.language_handlers.factory.LanguageHandlerFactory.create_handler")
-    def test_run_without_callbacks(
-        self, mock_create_handler: MagicMock, mock_docker_from_env: MagicMock
-    ) -> None:
+    def test_run_without_callbacks(self, mock_create_handler: MagicMock, mock_docker_from_env: MagicMock) -> None:
         """Test that run() works without any callback parameters."""
         mock_handler = MagicMock()
         mock_handler.file_extension = "py"

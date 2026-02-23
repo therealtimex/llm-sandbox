@@ -1,3 +1,5 @@
+# ruff: noqa: T201, D401
+
 """Demo: Real-time output streaming callbacks.
 
 This example demonstrates how to use the on_stdout and on_stderr callback
@@ -12,7 +14,11 @@ Usage:
 
 import sys
 
+import docker
+
 from llm_sandbox import SandboxSession
+
+client = docker.DockerClient.from_env()
 
 
 def basic_streaming() -> None:
@@ -29,11 +35,11 @@ def basic_streaming() -> None:
 import time
 for i in range(5):
     print(f"Processing step {i + 1}/5...")
-    time.sleep(0.5)
+    time.sleep(3)
 print("Done!")
 """
 
-    with SandboxSession(lang="python", verbose=False) as session:
+    with SandboxSession(lang="python", verbose=False, client=client) as session:
         result = session.run(
             code,
             on_stdout=lambda chunk: print(f"  [LIVE] {chunk}", end=""),
@@ -65,7 +71,7 @@ print("Normal output line 3")
     stdout_lines: list[str] = []
     stderr_lines: list[str] = []
 
-    with SandboxSession(lang="python", verbose=False) as session:
+    with SandboxSession(lang="python", verbose=False, client=client) as session:
         result = session.run(
             code,
             on_stdout=lambda chunk: stdout_lines.append(chunk),
@@ -117,7 +123,7 @@ print("COMPLETE")
             elif line == "COMPLETE":
                 print("\n  Execution complete!")
 
-    with SandboxSession(lang="python", verbose=False) as session:
+    with SandboxSession(lang="python", verbose=False, client=client) as session:
         result = session.run(code, on_stdout=on_output)
 
     print(f"  Exit code: {result.exit_code}")
@@ -166,7 +172,7 @@ print("Evaluation complete: accuracy=0.95")
             "content": chunk.rstrip(),
         })
 
-    with SandboxSession(lang="python", verbose=False) as session:
+    with SandboxSession(lang="python", verbose=False, client=client) as session:
         session.run(code, on_stdout=log_stdout, on_stderr=log_stderr)
 
     print("  Collected log entries:")
@@ -194,7 +200,7 @@ for i in range(3):
     chunks: list[str] = []
 
     # Note: we do NOT pass stream=True to SandboxSession
-    with SandboxSession(lang="python", verbose=False) as session:
+    with SandboxSession(lang="python", verbose=False, client=client) as session:
         result = session.run(code, on_stdout=chunks.append)
 
     print(f"  Received {len(chunks)} chunk(s) via callback")

@@ -451,9 +451,11 @@ class SandboxKubernetesSession(BaseSession):
             },
         }
 
+        containers = pod_manifest["spec"]["containers"]  # type: ignore[index]
+        env_list = [{"name": "PYTHONUNBUFFERED", "value": "1"}]
         if self.env_vars:
-            containers = pod_manifest["spec"]["containers"]  # type: ignore[index]
-            containers[0]["env"] = [{"name": key, "value": value} for key, value in self.env_vars.items()]
+            env_list.extend({"name": key, "value": value} for key, value in self.env_vars.items())
+        containers[0]["env"] = env_list
         return pod_manifest
 
     def _reconfigure_with_pod_manifest(self) -> None:

@@ -27,9 +27,10 @@ class PodmanContainerAPI(DockerContainerAPI):
     def execute_command(self, container: Any, command: str, **kwargs: Any) -> tuple[int, Any]:
         """Execute command in Podman container."""
         workdir = kwargs.get("workdir")
+        stream = kwargs.get("stream", self.stream)
         exec_kwargs: dict[str, Any] = {
             "cmd": command,
-            "stream": self.stream,
+            "stream": stream,
             "tty": False,
             "stderr": True,
             "stdout": True,

@@ -377,6 +377,15 @@ class SandboxDockerSession(BaseSession):
             container_config = {"image": self.docker_image, "detach": True, "tty": True, "user": "root"}
             container_config.update(self.config.runtime_configs)
 
+            env = container_config.get("environment")
+            if isinstance(env, dict):
+                env.setdefault("PYTHONUNBUFFERED", "1")
+            elif isinstance(env, list):
+                if not any(e.startswith("PYTHONUNBUFFERED=") for e in env):
+                    env.append("PYTHONUNBUFFERED=1")
+            else:
+                container_config["environment"] = {"PYTHONUNBUFFERED": "1"}
+
             self.container = self.container_api.create_container(container_config)
             self.container_api.start_container(self.container)
 
